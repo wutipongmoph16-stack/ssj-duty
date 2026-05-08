@@ -77,6 +77,10 @@
       <div id="scheduleContainer" class="row"></div>
     </div>
 
+    <div class="container mt-n4">
+      <div id="liveStatusContainer"></div>
+    </div>
+
     <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
     <script>
       // ⚙️ ตั้งค่าตัวแปร
@@ -108,10 +112,13 @@
         }
       }
 
-      // 2. Fetch Data จาก GAS
+      // ==========================================
+      // 2. Fetch Data จาก GAS (ดึงข้อมูล API)
+      // ==========================================
       async function fetchScheduleData() {
+        // แสดงหน้าจอโหลด (Loading Screen) ด้วย SweetAlert2
         Swal.fire({
-          title: "กำลังโหลดตารางเวร...",
+          title: "กำลังโหลดข้อมูล...",
           text: "กรุณารอสักครู่",
           allowOutsideClick: false,
           didOpen: () => {
@@ -123,8 +130,12 @@
           const response = await fetch(API_URL);
           const result = await response.json();
 
+          // ตรวจสอบว่า API ตอบกลับมาสำเร็จหรือไม่
           if (result.status === "success") {
-            renderSchedule(result.data);
+            // ส่งข้อมูลตารางเวร (schedule) และภารกิจวันนี้ (currentDutyTasks) ไปให้ฟังก์ชันสร้างหน้าเว็บ
+            renderSchedule(result.schedule, result.currentDutyTasks);
+
+            // ปิดหน้าจอโหลดเมื่อสำเร็จ
             Swal.close();
           } else {
             Swal.fire("ข้อผิดพลาด", "ไม่สามารถโหลดข้อมูลตารางเวรได้", "error");
@@ -135,19 +146,64 @@
         }
       }
 
-      // 3. Render Data แบบ Seamless DOM
-      function renderSchedule(data) {
+      // ==========================================
+      // 3. Render Data แบบ Seamless DOM (สร้างหน้าเว็บ)
+      // ==========================================
+      function renderSchedule(data, currentTasks) {
         const container = document.getElementById("scheduleContainer");
-        container.innerHTML = ""; // Clear โครงเก่า
+        const liveContainer = document.getElementById("liveStatusContainer");
+        const now = new Date().getTime(); // เวลาปัจจุบัน (Timestamp)
 
-        if (data.length === 0) {
-          container.innerHTML =
-            '<div class="col-12 text-center text-muted mt-5"><p>📭 ยังไม่มีการจัดตารางเวรในอนาคต</p></div>';
+        // ล้างข้อมูลเก่าทิ้งทั้งหมดเพื่อป้องกันการแสดงผลซ้ำซ้อน
+        container.innerHTML = "";
+        if (liveContainer) liveContainer.innerHTML = "";
+
+        // ------------------------------------------
+        // ส่วนที่ 1: จัดการ Live Status (ภารกิจของวันนี้)
+        // ------------------------------------------
+        if (liveContainer && currentTasks && currentTasks.length > 0) {
+          // ค้นหาภารกิจ "แรกสุด" ที่เวลายังมาไม่ถึง (เอาเวลาปัจจุบันไปเทียบ)
+          const nextTask = currentTasks.find((t) => t.rawTime > now);
+
+          if (nextTask) {
+            // กรณีมีภารกิจที่ต้องทำต่อไป
+            liveContainer.innerHTML = `
+                <div class="card border-0 shadow-sm mb-4" style="border-radius: 20px; background: #fff;">
+                    <div class="card-body p-4 text-center">
+                        <span class="badge bg-success mb-2">ภารกิจปัจจุบันของคุณ</span>
+                        <h2 class="fw-bold text-primary mb-1">${nextTask.name}</h2>
+                        <p class="text-muted mb-3">กำหนดเวลา: ${nextTask.time} น.</p>
+                        <hr>
+                        <small class="text-secondary">ดำเนินการตามระเบียบ สสจ.ลพบุรี</small>
+                    </div>
+                </div>
+            `;
+          } else {
+            // กรณีเวลาเลยภารกิจสุดท้ายไปแล้ว (ทำงานครบถ้วน)
+            liveContainer.innerHTML = `
+                <div class="alert alert-light text-center border-0 shadow-sm mb-4" style="border-radius: 15px;">
+                    <h5 class="mb-0 text-success fw-bold">✅ คุณปฏิบัติหน้าที่ครบถ้วนแล้วสำหรับวันนี้</h5>
+                </div>
+            `;
+          }
+        }
+
+        // ------------------------------------------
+        // ส่วนที่ 2: จัดการตารางเวรภาพรวม (Upcoming Schedule)
+        // ------------------------------------------
+        if (!data || data.length === 0) {
+          // กรณีไม่มีข้อมูลเวรในอนาคตเลย
+          container.innerHTML = `
+            <div class="col-12 text-center text-muted mt-5">
+                <p>📭 ยังไม่มีการจัดตารางเวรในอนาคต</p>
+            </div>
+        `;
           return;
         }
 
+        // วนลูปสร้างการ์ดตารางเวร
         data.forEach((item, index) => {
-          // ไฮไลต์ให้เวรถัดไป (อันดับแรก) ดูเด่นขึ้น
+          // ไฮไลต์การ์ดใบแรก (เวรถัดไป) ให้ดูเด่นขึ้น
           const isNext = index === 0;
           const badgeHtml = isNext
             ? `<span class="badge badge-next rounded-pill mb-2">เวรถัดไป</span>`
@@ -155,21 +211,21 @@
           const cardBorder = isNext ? "border-primary border-2" : "";
 
           const cardHtml = `
-                    <div class="col-12 col-md-6 mb-3">
-                        <div class="card duty-card ${cardBorder} p-3">
-                            <div class="d-flex align-items-center">
-                                <div class="card-icon me-3">
-                                    🗓️
-                                </div>
-                                <div class="flex-grow-1">
-                                    ${badgeHtml}
-                                    <h5 class="mb-1 fw-bold text-dark">${item.date}</h5>
-                                    <p class="mb-0 text-muted small"><i class="bi bi-person-fill"></i> ผู้ปฏิบัติงาน: <strong>${item.person}</strong></p>
-                                </div>
-                            </div>
+            <div class="col-12 col-md-6 mb-3">
+                <div class="card duty-card ${cardBorder} p-3">
+                    <div class="d-flex align-items-center">
+                        <div class="card-icon me-3">
+                            🗓️
+                        </div>
+                        <div class="flex-grow-1">
+                            ${badgeHtml}
+                            <h5 class="mb-1 fw-bold text-dark">${item.date}</h5>
+                            <p class="mb-0 text-muted small"><i class="bi bi-person-fill"></i> ผู้ปฏิบัติงาน: <strong>${item.person}</strong></p>
                         </div>
                     </div>
-                `;
+                </div>
+            </div>
+        `;
           container.insertAdjacentHTML("beforeend", cardHtml);
         });
       }
