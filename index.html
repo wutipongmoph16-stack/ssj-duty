@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ระบบตรวจสอบเวรรักษาอาคาร</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+    <style>
+      body {
+        font-family: "Prompt", sans-serif;
+        background-color: #f4f7f6;
+        color: #333;
+      }
+      .header-banner {
+        background: linear-gradient(135deg, #0f5298, #2575fc);
+        color: white;
+        padding: 30px 20px;
+        border-bottom-left-radius: 20px;
+        border-bottom-right-radius: 20px;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+      }
+      .duty-card {
+        border: none;
+        border-radius: 15px;
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
+        transition: transform 0.2s;
+        margin-bottom: 15px;
+      }
+      .duty-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 6px 15px rgba(0, 0, 0, 0.1);
+      }
+      .card-icon {
+        font-size: 2rem;
+        color: #2575fc;
+      }
+      .badge-next {
+        background-color: #ff4757;
+        font-weight: 500;
+      }
+      .profile-pic {
+        width: 50px;
+        height: 50px;
+        border-radius: 50%;
+        object-fit: cover;
+        border: 2px solid white;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="header-banner text-center mb-4">
+      <div class="d-flex justify-content-center align-items-center mb-2">
+        <img
+          id="userPicture"
+          src=""
+          class="profile-pic d-none me-3"
+          alt="Profile"
+        />
+        <h5 class="mb-0">
+          สวัสดีคุณ <span id="displayName" class="fw-bold">กำลังโหลด...</span>
+        </h5>
+      </div>
+      <h4 class="fw-bold mb-1">ตารางเวรรักษาอาคาร</h4>
+      <p class="mb-0 opacity-75 small">สำนักงานสาธารณสุขจังหวัดลพบุรี</p>
+    </div>
+
+    <div class="container pb-5">
+      <div id="scheduleContainer" class="row"></div>
+    </div>
+
+    <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+    <script>
+      // ⚙️ ตั้งค่าตัวแปร
+      const LIFF_ID = "2010019868-HUONxCMz";
+      const API_URL =
+        "https://script.google.com/macros/s/AKfycbyQmeP3x0nfAdbemXyfblabC0vjiXhErHJfh3Jqse_eoL1edue6pdbJQlGHXWDRnSQGkA/exec";
+
+      // 1. Initialize LIFF
+      async function initializeLiff() {
+        try {
+          await liff.init({ liffId: LIFF_ID });
+          if (liff.isLoggedIn()) {
+            const profile = await liff.getProfile();
+            document.getElementById("displayName").innerText =
+              profile.displayName;
+            const picUrl = profile.pictureUrl;
+            if (picUrl) {
+              const img = document.getElementById("userPicture");
+              img.src = picUrl;
+              img.classList.remove("d-none");
+            }
+            fetchScheduleData(); // เรียก API ดึงข้อมูล
+          } else {
+            liff.login();
+          }
+        } catch (err) {
+          console.error("LIFF Init Error:", err);
+          Swal.fire("ข้อผิดพลาด", "ไม่สามารถเชื่อมต่อ LINE ได้", "error");
+        }
+      }
+
+      // 2. Fetch Data จาก GAS
+      async function fetchScheduleData() {
+        Swal.fire({
+          title: "กำลังโหลดตารางเวร...",
+          text: "กรุณารอสักครู่",
+          allowOutsideClick: false,
+          didOpen: () => {
+            Swal.showLoading();
+          },
+        });
+
+        try {
+          const response = await fetch(API_URL);
+          const result = await response.json();
+
+          if (result.status === "success") {
+            renderSchedule(result.data);
+            Swal.close();
+          } else {
+            Swal.fire("ข้อผิดพลาด", "ไม่สามารถโหลดข้อมูลตารางเวรได้", "error");
+          }
+        } catch (error) {
+          console.error("Fetch Error:", error);
+          Swal.fire("ข้อผิดพลาด", "การเชื่อมต่อเซิร์ฟเวอร์ขัดข้อง", "error");
+        }
+      }
+
+      // 3. Render Data แบบ Seamless DOM
+      function renderSchedule(data) {
+        const container = document.getElementById("scheduleContainer");
+        container.innerHTML = ""; // Clear โครงเก่า
+
+        if (data.length === 0) {
+          container.innerHTML =
+            '<div class="col-12 text-center text-muted mt-5"><p>📭 ยังไม่มีการจัดตารางเวรในอนาคต</p></div>';
+          return;
+        }
+
+        data.forEach((item, index) => {
+          // ไฮไลต์ให้เวรถัดไป (อันดับแรก) ดูเด่นขึ้น
+          const isNext = index === 0;
+          const badgeHtml = isNext
+            ? `<span class="badge badge-next rounded-pill mb-2">เวรถัดไป</span>`
+            : "";
+          const cardBorder = isNext ? "border-primary border-2" : "";
+
+          const cardHtml = `
+                    <div class="col-12 col-md-6 mb-3">
+                        <div class="card duty-card ${cardBorder} p-3">
+                            <div class="d-flex align-items-center">
+                                <div class="card-icon me-3">
+                                    🗓️
+                                </div>
+                                <div class="flex-grow-1">
+                                    ${badgeHtml}
+                                    <h5 class="mb-1 fw-bold text-dark">${item.date}</h5>
+                                    <p class="mb-0 text-muted small"><i class="bi bi-person-fill"></i> ผู้ปฏิบัติงาน: <strong>${item.person}</strong></p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+          container.insertAdjacentHTML("beforeend", cardHtml);
+        });
+      }
+
+      // เริ่มการทำงานเมื่อหน้าเว็บโหลดเสร็จ
+      window.onload = () => {
+        initializeLiff();
+      };
+    </script>
+  </body>
+</html>
